@@ -1,7 +1,40 @@
 const router = require('express').Router();
+const bcrypt = require('bcryptjs')
 
-router.post('/register', (req, res) => {
-  res.end('implement register, please!');
+const { SECRET } = require("../secrets/index.js")
+const jwt = require('jsonwebtoken')
+
+const Users = require('../users/users-model.js')
+const { usernamePasswordInputValid, checkUsernameFree, checkUsernameExists } = require("../middleware/auth-middleware.js")
+
+
+
+//BUILDING TOKEN FUNCTION
+function buildToken(user) {
+  const payload = {
+    subject: user.id,
+    username: user.username,
+    role: user.role_name,
+  }
+  const options = {
+    expriresIn: "1d",
+  }
+  return jwt.sign(payload, SECRET, options)
+}
+
+router.post('/register', usernamePasswordInputValid, checkUsernameFree, (req, res, next) => {
+  let user = req.body;
+
+  const rounds = process.env.BCRYPT_ROUNDS || 8;
+  const hash = bcrypt.hashSync(user.password, rounds);
+
+  user.password = hash
+
+  Users.add(user)
+    .then(newUser => {
+      res.status(201).json(newUser)
+    })
+    .catch(next)
   /*
     IMPLEMENT
     You are welcome to build additional middlewares to help with the endpoint's functionality.
@@ -29,7 +62,7 @@ router.post('/register', (req, res) => {
   */
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', checkUsernameExists, (req, res, next) => {
   res.end('implement login, please!');
   /*
     IMPLEMENT
@@ -54,6 +87,22 @@ router.post('/login', (req, res) => {
     4- On FAILED login due to `username` not existing in the db, or `password` being incorrect,
       the response body should include a string exactly as follows: "invalid credentials".
   */
+ if(bcrypt.compareSync(req.body.password, req.user.password)) {
+   const token = buildToken(req.user)
+   res.status(200).json({
+     message: `welcome, ${req.user.username}`,
+     token: token
+   })
+ } else {
+    if(!req.body.username || !req.body.password){
+      next({
+        status: 422,
+        message: "username and password required"
+      })
+    } else {
+      next()
+    }
+ }
 });
 
 module.exports = router;
